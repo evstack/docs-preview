@@ -5,6 +5,7 @@ on:
     # Run weekly on Sunday at midnight UTC
     - cron: '0 0 * * 0'
   workflow_dispatch: # Allow manual trigger
+  pull_request: # For testing
 
 permissions:
   contents: write
@@ -57,7 +58,17 @@ jobs:
           echo ""
           echo "DELETED_FOLDERS=$DELETED_FOLDERS" >> "$GITHUB_ENV"
 
+      - name: Summary (dry-run on PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -z "$DELETED_FOLDERS" ]; then
+            echo "Dry-run: No folders would be deleted"
+          else
+            echo "Dry-run: Would delete:$DELETED_FOLDERS"
+          fi
+
       - name: Commit and push changes
+        if: github.event_name != 'pull_request'
         run: |
           if [ -z "$DELETED_FOLDERS" ]; then
             echo "No folders to delete"
