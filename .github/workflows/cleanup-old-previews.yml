@@ -35,7 +35,8 @@ jobs:
             dir="${dir%/}"
 
             # Get the date of the first commit that added this folder
-            FIRST_COMMIT_DATE=$(git log --diff-filter=A --format=%ct --reverse -- "$dir" | head -1)
+            # Disable pipefail in subshell to avoid SIGPIPE (exit 141) when head closes early
+            FIRST_COMMIT_DATE=$(set +o pipefail; git log --diff-filter=A --format=%ct --reverse -- "$dir" | head -1)
 
             if [ -z "$FIRST_COMMIT_DATE" ]; then
               echo "Warning: Could not find creation date for $dir, skipping"
