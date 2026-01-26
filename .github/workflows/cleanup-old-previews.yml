@@ -1,0 +1,73 @@
+name: Cleanup Old PR Previews
+
+on:
+  schedule:
+    # Run weekly on Sunday at midnight UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need full history to determine folder age
+
+      - name: Find and delete old preview folders
+        run: |
+          set -euo pipefail
+
+          DAYS_OLD=7
+          CUTOFF_DATE=$(date -d "$DAYS_OLD days ago" +%s)
+          DELETED_FOLDERS=""
+
+          echo "Cutoff date: $(date -d "@$CUTOFF_DATE" --iso-8601=seconds)"
+          echo "Looking for pr-* folders older than $DAYS_OLD days..."
+          echo ""
+
+          for dir in pr-*/; do
+            [ -d "$dir" ] || continue
+            dir="${dir%/}"
+
+            # Get the date of the first commit that added this folder
+            FIRST_COMMIT_DATE=$(git log --diff-filter=A --format=%ct --reverse -- "$dir" | head -1)
+
+            if [ -z "$FIRST_COMMIT_DATE" ]; then
+              echo "Warning: Could not find creation date for $dir, skipping"
+              continue
+            fi
+
+            FOLDER_AGE_DAYS=$(( ($(date +%s) - FIRST_COMMIT_DATE) / 86400 ))
+
+            if [ "$FIRST_COMMIT_DATE" -lt "$CUTOFF_DATE" ]; then
+              echo "Deleting $dir (created $(date -d "@$FIRST_COMMIT_DATE" --iso-8601=seconds), $FOLDER_AGE_DAYS days old)"
+              rm -rf "$dir"
+              DELETED_FOLDERS="$DELETED_FOLDERS $dir"
+            else
+              echo "Keeping $dir (created $(date -d "@$FIRST_COMMIT_DATE" --iso-8601=seconds), $FOLDER_AGE_DAYS days old)"
+            fi
+          done
+
+          echo ""
+          echo "DELETED_FOLDERS=$DELETED_FOLDERS" >> "$GITHUB_ENV"
+
+      - name: Commit and push changes
+        run: |
+          if [ -z "$DELETED_FOLDERS" ]; then
+            echo "No folders to delete"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "chore: cleanup old PR preview folders
+
+          Deleted folders:$DELETED_FOLDERS"
+          git push
